@@ -106,6 +106,7 @@ export interface TeamSheetState {
   hasFrenesieAgressionPrayer: boolean;
   currentTurn: number; // 0..8 dans la mi-temps active
   turnMarkers: TeamTurnMarkers;
+  rerolls: number; // Stock de relances restantes (0..16)
 }
 
 export interface TurnAnnotation {

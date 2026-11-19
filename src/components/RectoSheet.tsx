@@ -11,7 +11,6 @@ import {
   calculateInducementBudgets,
   calculatePlayerPsp,
   calculatePopularityFactor,
-  calculateTeamScore,
   formatGold,
   getPrayerByRoll,
   getTeamDef,
@@ -24,6 +23,7 @@ import {
   SheetFrame,
   SpikedBallIllustration,
 } from './SheetFrame';
+import { TouchdownScoreboard } from './TouchdownScoreboard';
 import { TurnCounter } from './TurnCounter';
 
 interface RectoSheetProps {
@@ -40,8 +40,6 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
   onOpenInducementModal,
 }) => {
   const budgets = calculateInducementBudgets(match.teamA, match.teamB);
-  const scoreA = calculateTeamScore(match.teamA);
-  const scoreB = calculateTeamScore(match.teamB);
   const fpA = calculatePopularityFactor(match.teamA);
   const fpB = calculatePopularityFactor(match.teamB);
 
@@ -258,63 +256,19 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
             </div>
           </div>
 
-          {/* Center VS & Score */}
-          <div className="lg:col-span-2 flex flex-col items-center justify-center py-1 gap-1.5">
-            <div className="font-display text-2xl sm:text-3xl font-black italic tracking-tight text-[#9d1717] drop-shadow-[0_2px_0_#facc15]">
-              VS
-            </div>
-            <div className="flex items-center gap-1.5">
-              <label htmlFor="recto-score-a" className="sr-only">
-                Score Équipe A
-              </label>
-              <input
-                id="recto-score-a"
-                type="number"
-                min={0}
-                value={scoreA}
-                onChange={(e) =>
-                  updateTeam('A', (t) => ({
-                    ...t,
-                    manualScoreOverride: parseIntOrZero(e.target.value),
-                  }))
-                }
-                className="w-12 h-11 text-center font-display text-xl font-black bg-white border-2 border-[#1E1915] rounded shadow-inner font-mono-num focus:outline-none focus:ring-2 focus:ring-[#9d1717]"
-              />
-              <span className="font-black text-xl text-[#9d1717]">-</span>
-              <label htmlFor="recto-score-b" className="sr-only">
-                Score Équipe B
-              </label>
-              <input
-                id="recto-score-b"
-                type="number"
-                min={0}
-                value={scoreB}
-                onChange={(e) =>
-                  updateTeam('B', (t) => ({
-                    ...t,
-                    manualScoreOverride: parseIntOrZero(e.target.value),
-                  }))
-                }
-                className="w-12 h-11 text-center font-display text-xl font-black bg-white border-2 border-[#1E1915] rounded shadow-inner font-mono-num focus:outline-none focus:ring-2 focus:ring-[#9d1717]"
-              />
-            </div>
-            {(match.teamA.manualScoreOverride !== null ||
-              match.teamB.manualScoreOverride !== null) && (
-              <button
-                type="button"
-                onClick={() =>
-                  onUpdateMatch((p) => ({
-                    ...p,
-                    teamA: { ...p.teamA, manualScoreOverride: null },
-                    teamB: { ...p.teamB, manualScoreOverride: null },
-                  }))
-                }
-                className="no-print text-[10px] underline text-[#750d0d] cursor-pointer"
-              >
-                Auto (somme TD)
-              </button>
-            )}
-          </div>
+          {/* Center VS & Touchdown Scoreboard */}
+          <TouchdownScoreboard
+            teamA={match.teamA}
+            teamB={match.teamB}
+            onUpdateTeam={updateTeam}
+            onResetManualScores={() =>
+              onUpdateMatch((p) => ({
+                ...p,
+                teamA: { ...p.teamA, manualScoreOverride: null },
+                teamB: { ...p.teamB, manualScoreOverride: null },
+              }))
+            }
+          />
 
           {/* Équipe B */}
           <div className="lg:col-span-5 border-2 border-[#1E1915] bg-white/75 rounded-sm overflow-hidden flex flex-col">

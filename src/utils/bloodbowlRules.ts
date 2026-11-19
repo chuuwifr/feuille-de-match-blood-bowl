@@ -139,11 +139,28 @@ export function calculatePlayerPsp(
   );
 }
 
+export function getPlayerTdSum(team: TeamSheetState): number {
+  return team.players.reduce((sum, p) => sum + Math.max(0, p.td), 0);
+}
+
 export function calculateTeamScore(team: TeamSheetState): number {
   if (team.manualScoreOverride !== null) {
     return Math.max(0, team.manualScoreOverride);
   }
-  return team.players.reduce((sum, p) => sum + Math.max(0, p.td), 0);
+  return getPlayerTdSum(team);
+}
+
+export function stepTeamScore(
+  team: TeamSheetState,
+  delta: -1 | 1
+): TeamSheetState {
+  const current = calculateTeamScore(team);
+  const next = Math.max(0, current + delta);
+  const playerSum = getPlayerTdSum(team);
+  return {
+    ...team,
+    manualScoreOverride: next === playerSum ? null : next,
+  };
 }
 
 export interface GainsBreakdown {
@@ -427,6 +444,15 @@ export function getGlobalTurnNumber(half: 1 | 2, turnInHalf: number): number {
   return (half - 1) * 8 + safeTurn;
 }
 
+export function clampRerolls(rerolls: number): number {
+  if (!Number.isFinite(rerolls)) return 0;
+  return Math.max(0, Math.min(16, Math.round(rerolls)));
+}
+
+export function stepTeamRerolls(currentRerolls: number, delta: -1 | 1): number {
+  return clampRerolls(clampRerolls(currentRerolls) + delta);
+}
+
 export function normalizeMatchState(
   raw: Partial<MatchSheetState> | null | undefined
 ): MatchSheetState {
@@ -446,6 +472,7 @@ export function normalizeMatchState(
         ...createEmptyTurnMarkers(),
         ...(rawTeam.turnMarkers ?? {}),
       },
+      rerolls: clampRerolls(rawTeam.rerolls ?? empty.rerolls),
       players:
         Array.isArray(rawTeam.players) && rawTeam.players.length === 16
           ? rawTeam.players
@@ -512,6 +539,7 @@ export function createEmptyTeamState(): TeamSheetState {
     hasFrenesieAgressionPrayer: false,
     currentTurn: 0,
     turnMarkers: createEmptyTurnMarkers(),
+    rerolls: 3,
   };
 }
 
@@ -625,11 +653,13 @@ export function createDemoMatchState(): MatchSheetState {
     hasFrenesieAgressionPrayer: true,
     currentTurn: 8,
     turnMarkers: createEmptyTurnMarkers(),
+    rerolls: 2,
   };
 
   base.half = 2;
   base.activeTurnSide = 'A';
   base.teamA.currentTurn = 8;
+  base.teamA.rerolls = 3;
   base.turns[0] = { turn: 1, teamA: 'Réception propre, cage au centre', teamB: 'Blitz sur aile gauche' };
   base.turns[2] = { turn: 3, teamA: 'Passe de Konrad -> TD de Lukas !', teamB: 'Varag élimine Otto (-1 AR)' };
   base.turns[7] = { turn: 8, teamA: 'Défense solide', teamB: 'Varag égalise sur le fil (1-1)' };

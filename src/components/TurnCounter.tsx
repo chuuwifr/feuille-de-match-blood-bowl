@@ -1,9 +1,12 @@
 import React from 'react';
-import { ArrowRightLeft, Clock, Minus, Plus, RotateCcw } from 'lucide-react';
+import { ArrowRightLeft, Clock, Minus, Plus, RotateCcw, RotateCw } from 'lucide-react';
 import { MatchSheetState, TeamSheetState, TeamSide, TeamTurnMarkers } from '../types/bloodbowl';
 import {
   createEmptyTurnMarkers,
+  formatGold,
   getGlobalTurnNumber,
+  getTeamDef,
+  stepTeamRerolls,
   stepTeamTurn,
 } from '../utils/bloodbowlRules';
 
@@ -89,6 +92,13 @@ export const TurnCounter: React.FC<TurnCounterProps> = ({
     }));
   };
 
+  const handleStepRerolls = (side: TeamSide, delta: -1 | 1) => {
+    updateTeamTurn(side, (team) => ({
+      ...team,
+      rerolls: stepTeamRerolls(team.rerolls, delta),
+    }));
+  };
+
   const handleSwitchHalf = (targetHalf: 1 | 2) => {
     onUpdateMatch((prev) => ({
       ...prev,
@@ -136,6 +146,7 @@ export const TurnCounter: React.FC<TurnCounterProps> = ({
     const isActive = activeTurnSide === side;
     const globalTurn = getGlobalTurnNumber(half, team.currentTurn);
     const labelName = team.name.trim() || `Équipe ${side}`;
+    const teamDef = getTeamDef(team.teamId);
 
     return (
       <div
@@ -237,10 +248,10 @@ export const TurnCounter: React.FC<TurnCounterProps> = ({
           })}
         </div>
 
-        {/* Per-turn action markers (1/tour) */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5 text-[11px]">
-          <span className="font-semibold text-stone-700">Actions du tour :</span>
+        {/* Per-turn action markers (1/tour) + Team Rerolls counter */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#1E1915]/20 text-[11px]">
           <div className="flex flex-wrap items-center gap-1">
+            <span className="font-semibold text-stone-700 mr-0.5">Actions :</span>
             {ACTION_MARKER_ITEMS.map((item) => {
               const used = team.turnMarkers[item.key];
               return (
@@ -261,6 +272,49 @@ export const TurnCounter: React.FC<TurnCounterProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          <div
+            data-testid={`reroll-counter-${side.toLowerCase()}`}
+            className="flex items-center gap-1.5 shrink-0"
+          >
+            <span
+              title={
+                teamDef
+                  ? `Coût d’une relance ${teamDef.name} : ${formatGold(teamDef.rerollCost)} po`
+                  : 'Stock de relances d’équipe'
+              }
+              className="inline-flex items-center gap-1 font-semibold text-[#1E1915]"
+            >
+              <RotateCw className="w-3 h-3 text-[#750d0d]" />
+              <span>Relances :</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => handleStepRerolls(side, -1)}
+              disabled={team.rerolls <= 0}
+              aria-label={`Décrémenter relances Équipe ${side}`}
+              className="no-print w-6 h-6 flex items-center justify-center rounded-sm border border-[#1E1915] bg-[#efe2c0] hover:bg-amber-300 disabled:opacity-40 disabled:cursor-not-allowed text-[#1E1915] cursor-pointer"
+            >
+              <Minus className="w-3 h-3" />
+            </button>
+            <span
+              data-testid={`rerolls-value-${side.toLowerCase()}`}
+              className={`w-8 h-6 flex items-center justify-center rounded-sm border border-[#1E1915] bg-white font-mono-num text-xs font-extrabold ${
+                team.rerolls === 0 ? 'text-[#750d0d]' : 'text-[#0D2042]'
+              }`}
+            >
+              {team.rerolls}
+            </span>
+            <button
+              type="button"
+              onClick={() => handleStepRerolls(side, 1)}
+              disabled={team.rerolls >= 16}
+              aria-label={`Incrémenter relances Équipe ${side}`}
+              className="no-print w-6 h-6 flex items-center justify-center rounded-sm border border-[#1E1915] bg-[#0D2042] hover:bg-[#16315e] disabled:opacity-40 disabled:cursor-not-allowed text-white cursor-pointer"
+            >
+              <Plus className="w-3 h-3" />
+            </button>
           </div>
         </div>
       </div>

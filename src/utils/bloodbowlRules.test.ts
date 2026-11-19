@@ -6,14 +6,18 @@ import {
   calculatePlayerPsp,
   calculatePopularityFactor,
   calculatePostMatchGains,
+  clampRerolls,
   clampTurnMarker,
   createEmptyPlayers,
   createEmptyTeamState,
   evaluateDedicatedFansChange,
   evaluateExpensiveMistakes,
   getGlobalTurnNumber,
+  getPlayerTdSum,
   getWeatherByRoll,
   normalizeMatchState,
+  stepTeamRerolls,
+  stepTeamScore,
   stepTeamTurn,
 } from './bloodbowlRules';
 
@@ -166,4 +170,42 @@ test('normalizeMatchState safely upgrades legacy saved matches without turn coun
     handoff: false,
     foul: false,
   });
+});
+
+test('stepTeamScore increments, decrements, clamps at zero, and restores auto-sync', () => {
+  let team = createEmptyTeamState();
+  team.players[0].td = 1;
+  assert.equal(getPlayerTdSum(team), 1);
+
+  // Decrement below 0 is prevented; 1 -> 0 sets manual override to 0
+  team = stepTeamScore(team, -1);
+  assert.equal(team.manualScoreOverride, 0);
+  team = stepTeamScore(team, -1);
+  assert.equal(team.manualScoreOverride, 0);
+
+  // Increment back to 1 restores auto-sync (null)
+  team = stepTeamScore(team, 1);
+  assert.equal(team.manualScoreOverride, null);
+
+  // Increment to 2 sets manual override to 2
+  team = stepTeamScore(team, 1);
+  assert.equal(team.manualScoreOverride, 2);
+});
+
+test('Reroll helpers clamp 0..16, step stock cleanly, and upgrade legacy matches', () => {
+  assert.equal(clampRerolls(-2), 0);
+  assert.equal(clampRerolls(25), 16);
+  assert.equal(stepTeamRerolls(0, -1), 0);
+  assert.equal(stepTeamRerolls(3, -1), 2);
+  assert.equal(stepTeamRerolls(2, 1), 3);
+  assert.equal(stepTeamRerolls(16, 1), 16);
+
+  const legacy = createEmptyTeamState();
+  const { rerolls: _rr, ...withoutRerolls } = legacy;
+  const upgraded = normalizeMatchState({
+    teamA: withoutRerolls as never,
+    teamB: withoutRerolls as never,
+  });
+  assert.equal(upgraded.teamA.rerolls, 3);
+  assert.equal(upgraded.teamB.rerolls, 3);
 });
