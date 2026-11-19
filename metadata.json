@@ -1,0 +1,6 @@
+{
+  "name": "Blood Bowl — Feuille de Match Interactive",
+  "description": "Feuille de match interactive recto-verso pour Blood Bowl Saison 3 avec calculs automatiques des valeurs d'équipe, coups de pouce, météo, PSP, gains et erreurs coûteuses.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
