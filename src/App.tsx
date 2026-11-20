@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { InducementPickerModal } from './components/InducementPickerModal';
 import { RectoSheet } from './components/RectoSheet';
 import { RulesDiceDrawer } from './components/RulesDiceDrawer';
-import { TeamRosterModal } from './components/TeamRosterModal';
+import {
+  ExcelImportOptions,
+  TeamRosterModal,
+} from './components/TeamRosterModal';
 import { TopToolbar } from './components/TopToolbar';
 import { VersoSheet } from './components/VersoSheet';
 import {
@@ -14,11 +17,16 @@ import {
 import {
   calculateInducementBudgets,
   calculateTeamScore,
+  clampRerolls,
   createDemoMatchState,
   createEmptyPlayers,
   createInitialMatchState,
   normalizeMatchState,
 } from './utils/bloodbowlRules';
+import {
+  buildImportedPlayersGrid,
+  ImportedTeamRoster,
+} from './utils/teamExcelParser';
 
 const STORAGE_KEY = 'bloodbowl-match-sheet-v3';
 
@@ -37,7 +45,10 @@ export default function App() {
   const [match, setMatch] = useState<MatchSheetState>(loadSavedMatch);
   const [viewMode, setViewMode] = useState<SheetViewMode>('recto');
   const [isRulesOpen, setIsRulesOpen] = useState(false);
-  const [teamModalSide, setTeamModalSide] = useState<TeamSide | null>(null);
+  const [teamModal, setTeamModal] = useState<{
+    side: TeamSide;
+    initialTab: 'catalog' | 'import';
+  } | null>(null);
   const [inducementModalSide, setInducementModalSide] =
     useState<TeamSide | null>(null);
 
@@ -105,7 +116,53 @@ export default function App() {
         },
       };
     });
-    setTeamModalSide(null);
+    setTeamModal(null);
+  };
+
+  const handleImportExcelTeam = (
+    side: TeamSide,
+    roster: ImportedTeamRoster,
+    options: ExcelImportOptions
+  ) => {
+    updateMatch((prev) => {
+      const targetKey = side === 'A' ? 'teamA' : 'teamB';
+      const currentTeam = prev[targetKey];
+      const nextPlayers = options.replacePlayers
+        ? buildImportedPlayersGrid(roster.players)
+        : currentTeam.players;
+
+      return {
+        ...prev,
+        [targetKey]: {
+          ...currentTeam,
+          teamId: roster.matchedTeamDef?.id ?? null,
+          name: roster.teamName || currentTeam.name,
+          coach: roster.coach || currentTeam.coach,
+          specialRulesOverride: roster.specialRules,
+          tve: options.importFinancesAndRerolls
+            ? roster.tve || roster.vea || currentTeam.tve
+            : currentTeam.tve,
+          vea: options.importFinancesAndRerolls
+            ? roster.vea || roster.tve || currentTeam.vea
+            : currentTeam.vea,
+          treasury: options.importFinancesAndRerolls
+            ? roster.treasury
+            : currentTeam.treasury,
+          dedicatedFans: options.importFinancesAndRerolls
+            ? Math.max(1, Math.min(7, roster.dedicatedFans || 1))
+            : currentTeam.dedicatedFans,
+          rerolls: options.importFinancesAndRerolls
+            ? clampRerolls(roster.rerolls)
+            : currentTeam.rerolls,
+          hasJournaliers:
+            options.importFinancesAndRerolls && roster.journaliersCount > 0
+              ? true
+              : currentTeam.hasJournaliers,
+          players: nextPlayers,
+        },
+      };
+    });
+    setTeamModal(null);
   };
 
   const handleAddInducement = (
@@ -224,7 +281,9 @@ export default function App() {
             <RectoSheet
               match={match}
               onUpdateMatch={updateMatch}
-              onOpenTeamModal={(side) => setTeamModalSide(side)}
+              onOpenTeamModal={(side, initialTab = 'catalog') =>
+                setTeamModal({ side, initialTab })
+              }
               onOpenInducementModal={(side) => setInducementModalSide(side)}
             />
           )}
@@ -244,16 +303,20 @@ export default function App() {
         />
       )}
 
-      {teamModalSide && (
+      {teamModal && (
         <TeamRosterModal
-          side={teamModalSide}
+          side={teamModal.side}
+          initialTab={teamModal.initialTab}
           currentTeamId={
-            teamModalSide === 'A' ? match.teamA.teamId : match.teamB.teamId
+            teamModal.side === 'A' ? match.teamA.teamId : match.teamB.teamId
           }
           onSelectTeam={(teamDef, populate) =>
-            handleSelectTeam(teamModalSide, teamDef, populate)
+            handleSelectTeam(teamModal.side, teamDef, populate)
           }
-          onClose={() => setTeamModalSide(null)}
+          onImportExcelTeam={(roster, options) =>
+            handleImportExcelTeam(teamModal.side, roster, options)
+          }
+          onClose={() => setTeamModal(null)}
         />
       )}
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Dices, Shield, Sparkles } from 'lucide-react';
+import { BookOpen, Dices, FileSpreadsheet, Shield, Sparkles } from 'lucide-react';
 import { SEQUELLE_OPTIONS, WEATHER_TABLE } from '../data/bloodbowlRulesData';
 import {
   MatchSheetState,
@@ -29,7 +29,7 @@ import { TurnCounter } from './TurnCounter';
 interface RectoSheetProps {
   match: MatchSheetState;
   onUpdateMatch: (updater: (prev: MatchSheetState) => MatchSheetState) => void;
-  onOpenTeamModal: (side: TeamSide) => void;
+  onOpenTeamModal: (side: TeamSide, initialTab?: 'catalog' | 'import') => void;
   onOpenInducementModal: (side: TeamSide) => void;
 }
 
@@ -181,20 +181,32 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-stretch">
           {/* Équipe A */}
           <div className="lg:col-span-5 border-2 border-[#1E1915] bg-white/75 rounded-sm overflow-hidden flex flex-col">
-            <div className="navy-header px-2.5 py-1 flex items-center justify-between border-b-2 border-[#EAB308]">
-              <div className="flex items-center gap-1.5 text-white font-display font-bold text-xs sm:text-sm tracking-wider">
+            <div className="navy-header px-2.5 py-1 flex flex-wrap items-center justify-between gap-1.5 border-b-2 border-[#EAB308]">
+              <div className="flex items-center gap-1.5 text-white font-display font-bold text-xs sm:text-sm tracking-wider whitespace-nowrap shrink-0">
                 <span className="text-[#FDE047]" aria-hidden="true">★</span>
                 <span>ÉQUIPE A</span>
                 <span className="text-[#FDE047]" aria-hidden="true">★</span>
               </div>
-              <button
-                type="button"
-                onClick={() => onOpenTeamModal('A')}
-                className="no-print inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded cursor-pointer transition-colors"
-              >
-                <Shield className="w-3 h-3" />
-                <span>{defA ? defA.name : 'Choisir équipe'}</span>
-              </button>
+              <div className="no-print flex items-center gap-1.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onOpenTeamModal('A', 'import')}
+                  aria-label="Importer l'Équipe A depuis un fichier Excel ou CSV"
+                  title="Importer un roster Excel (.xlsx, .xls, .ods) ou CSV"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-[#efe2c0] hover:bg-white text-[#0D2042] rounded cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                >
+                  <FileSpreadsheet className="w-3 h-3 shrink-0" />
+                  <span>Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenTeamModal('A', 'catalog')}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded cursor-pointer transition-colors min-w-0 max-w-[165px] sm:max-w-none"
+                >
+                  <Shield className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{defA ? defA.name : 'Choisir équipe'}</span>
+                </button>
+              </div>
             </div>
             <div className="px-2.5 py-1.5 border-b border-[#1E1915]/40 bg-[#fffdf7]">
               <label htmlFor="team-a-name" className="sr-only">
@@ -272,20 +284,32 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
 
           {/* Équipe B */}
           <div className="lg:col-span-5 border-2 border-[#1E1915] bg-white/75 rounded-sm overflow-hidden flex flex-col">
-            <div className="navy-header px-2.5 py-1 flex items-center justify-between border-b-2 border-[#EAB308]">
-              <div className="flex items-center gap-1.5 text-white font-display font-bold text-xs sm:text-sm tracking-wider">
+            <div className="navy-header px-2.5 py-1 flex flex-wrap items-center justify-between gap-1.5 border-b-2 border-[#EAB308]">
+              <div className="flex items-center gap-1.5 text-white font-display font-bold text-xs sm:text-sm tracking-wider whitespace-nowrap shrink-0">
                 <span className="text-[#FDE047]" aria-hidden="true">★</span>
                 <span>ÉQUIPE B</span>
                 <span className="text-[#FDE047]" aria-hidden="true">★</span>
               </div>
-              <button
-                type="button"
-                onClick={() => onOpenTeamModal('B')}
-                className="no-print inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded cursor-pointer transition-colors"
-              >
-                <Shield className="w-3 h-3" />
-                <span>{defB ? defB.name : 'Choisir équipe'}</span>
-              </button>
+              <div className="no-print flex items-center gap-1.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onOpenTeamModal('B', 'import')}
+                  aria-label="Importer l'Équipe B depuis un fichier Excel ou CSV"
+                  title="Importer un roster Excel (.xlsx, .xls, .ods) ou CSV"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-[#efe2c0] hover:bg-white text-[#0D2042] rounded cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                >
+                  <FileSpreadsheet className="w-3 h-3 shrink-0" />
+                  <span>Excel</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenTeamModal('B', 'catalog')}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-semibold bg-amber-400 hover:bg-amber-300 text-amber-950 rounded cursor-pointer transition-colors min-w-0 max-w-[165px] sm:max-w-none"
+                >
+                  <Shield className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{defB ? defB.name : 'Choisir équipe'}</span>
+                </button>
+              </div>
             </div>
             <div className="px-2.5 py-1.5 border-b border-[#1E1915]/40 bg-[#fffdf7]">
               <label htmlFor="team-b-name" className="sr-only">
@@ -1401,6 +1425,11 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
                               updatePlayer('A', idx, (p) => ({ ...p, name: e.target.value }))
                             }
                             placeholder={pA.position || ''}
+                            title={
+                              pA.position
+                                ? `${pA.name || pA.position} (${pA.position})`
+                                : pA.name
+                            }
                             className="w-full bg-transparent focus:outline-none text-[11px] font-medium"
                           />
                           {pspA > 0 && (
@@ -1430,6 +1459,11 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
                               updatePlayer('B', idx, (p) => ({ ...p, name: e.target.value }))
                             }
                             placeholder={pB.position || ''}
+                            title={
+                              pB.position
+                                ? `${pB.name || pB.position} (${pB.position})`
+                                : pB.name
+                            }
                             className="w-full bg-transparent focus:outline-none text-[11px] font-medium"
                           />
                           {pspB > 0 && (
