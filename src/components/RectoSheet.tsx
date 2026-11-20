@@ -23,6 +23,7 @@ import {
   SheetFrame,
   SpikedBallIllustration,
 } from './SheetFrame';
+import { TacticalRerollsTracker } from './TacticalRerollsTracker';
 import { TouchdownScoreboard } from './TouchdownScoreboard';
 import { TurnCounter } from './TurnCounter';
 
@@ -1250,10 +1251,11 @@ export const RectoSheet: React.FC<RectoSheetProps> = ({
           </div>
         </section>
 
-        {/* LE MATCH — Turn Counter + 16-row Mirrored Roster Grid */}
+        {/* LE MATCH — Turn Counter + Tactical Rerolls + 16-row Mirrored Roster Grid */}
         <section aria-label="Feuille des Joueurs — Le Match">
           <CrimsonBanner title="LE MATCH" />
           <TurnCounter match={match} onUpdateMatch={onUpdateMatch} />
+          <TacticalRerollsTracker match={match} onUpdateMatch={onUpdateMatch} />
           <div className="border-2 border-[#1E1915] bg-white/85 rounded-sm overflow-x-auto">
             <table className="w-full min-w-[940px] border-collapse text-[11px]">
               <thead>

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { InducementPickerModal } from './components/InducementPickerModal';
+import { PrintSummarySheet } from './components/PrintSummarySheet';
 import { RectoSheet } from './components/RectoSheet';
 import { RulesDiceDrawer } from './components/RulesDiceDrawer';
 import {
   ExcelImportOptions,
   TeamRosterModal,
 } from './components/TeamRosterModal';
-import { TopToolbar } from './components/TopToolbar';
+import { BackupFeedback, TopToolbar } from './components/TopToolbar';
 import { VersoSheet } from './components/VersoSheet';
 import {
   BloodBowlTeamDef,
@@ -22,6 +23,8 @@ import {
   createEmptyPlayers,
   createInitialMatchState,
   normalizeMatchState,
+  normalizeUsedRerolls,
+  parseMatchBackupJson,
 } from './utils/bloodbowlRules';
 import {
   buildImportedPlayersGrid,
@@ -51,6 +54,15 @@ export default function App() {
   } | null>(null);
   const [inducementModalSide, setInducementModalSide] =
     useState<TeamSide | null>(null);
+  const [importFeedback, setImportFeedback] = useState<BackupFeedback | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!importFeedback || importFeedback.type !== 'success') return;
+    const timer = window.setTimeout(() => setImportFeedback(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [importFeedback]);
 
   useEffect(() => {
     try {
@@ -154,6 +166,9 @@ export default function App() {
           rerolls: options.importFinancesAndRerolls
             ? clampRerolls(roster.rerolls)
             : currentTeam.rerolls,
+          usedRerolls: options.importFinancesAndRerolls
+            ? normalizeUsedRerolls([], clampRerolls(roster.rerolls))
+            : currentTeam.usedRerolls,
           hasJournaliers:
             options.importFinancesAndRerolls && roster.journaliersCount > 0
               ? true
@@ -249,6 +264,25 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  const handleImportJson = (jsonText: string, fileName: string) => {
+    const result = parseMatchBackupJson(jsonText);
+    if (!result.ok) {
+      setImportFeedback({
+        type: 'error',
+        message: `${fileName} — ${result.error}`,
+      });
+      return;
+    }
+
+    setMatch(result.match);
+    const labelA = result.match.teamA.name.trim() || 'Équipe A';
+    const labelB = result.match.teamB.name.trim() || 'Équipe B';
+    setImportFeedback({
+      type: 'success',
+      message: `Sauvegarde restaurée (${fileName}) : ${labelA} vs ${labelB}.`,
+    });
+  };
+
   const scoreA = calculateTeamScore(match.teamA);
   const scoreB = calculateTeamScore(match.teamB);
   const budgets = calculateInducementBudgets(match.teamA, match.teamB);
@@ -259,39 +293,56 @@ export default function App() {
         viewMode={viewMode}
         onChangeViewMode={setViewMode}
         onOpenRulesDice={() => setIsRulesOpen(true)}
-        onLoadDemo={() => setMatch(createDemoMatchState())}
-        onReset={() => setMatch(createInitialMatchState())}
+        onLoadDemo={() => {
+          setMatch(createDemoMatchState());
+          setImportFeedback(null);
+        }}
+        onReset={() => {
+          setMatch(createInitialMatchState());
+          setImportFeedback(null);
+        }}
         onPrint={() => window.print()}
         onExportJson={handleExportJson}
+        onImportJson={handleImportJson}
+        importFeedback={importFeedback}
+        onClearImportFeedback={() => setImportFeedback(null)}
         scoreA={scoreA}
         scoreB={scoreB}
         teamAName={match.teamA.name}
         teamBName={match.teamB.name}
       />
 
-      <main className="flex-1 py-4 sm:py-6 px-2 sm:px-4">
-        <div
-          className={`mx-auto ${
-            viewMode === 'both'
-              ? 'max-w-[2160px] grid grid-cols-1 2xl:grid-cols-2 gap-6 items-start'
-              : 'max-w-[1080px]'
-          }`}
-        >
-          {(viewMode === 'recto' || viewMode === 'both') && (
-            <RectoSheet
-              match={match}
-              onUpdateMatch={updateMatch}
-              onOpenTeamModal={(side, initialTab = 'catalog') =>
-                setTeamModal({ side, initialTab })
-              }
-              onOpenInducementModal={(side) => setInducementModalSide(side)}
-            />
-          )}
+      <main className="flex-1 py-4 sm:py-6 px-2 sm:px-4 print:p-0">
+        {viewMode !== 'summary' && (
+          <div
+            className={`print:hidden mx-auto ${
+              viewMode === 'both'
+                ? 'max-w-[2160px] grid grid-cols-1 2xl:grid-cols-2 gap-6 items-start'
+                : 'max-w-[1080px]'
+            }`}
+          >
+            {(viewMode === 'recto' || viewMode === 'both') && (
+              <RectoSheet
+                match={match}
+                onUpdateMatch={updateMatch}
+                onOpenTeamModal={(side, initialTab = 'catalog') =>
+                  setTeamModal({ side, initialTab })
+                }
+                onOpenInducementModal={(side) => setInducementModalSide(side)}
+              />
+            )}
 
-          {(viewMode === 'verso' || viewMode === 'both') && (
-            <VersoSheet match={match} onUpdateMatch={updateMatch} />
-          )}
-        </div>
+            {(viewMode === 'verso' || viewMode === 'both') && (
+              <VersoSheet match={match} onUpdateMatch={updateMatch} />
+            )}
+          </div>
+        )}
+
+        <PrintSummarySheet
+          match={match}
+          isPreview={viewMode === 'summary'}
+          onPrint={() => window.print()}
+        />
       </main>
 
       {isRulesOpen && (

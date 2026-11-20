@@ -1,6 +1,6 @@
 export type TeamSide = 'A' | 'B';
 
-export type SheetViewMode = 'recto' | 'verso' | 'both';
+export type SheetViewMode = 'recto' | 'verso' | 'both' | 'summary';
 
 export type SpecialRuleTag =
   | 'Bagarreurs Brutaux'
@@ -106,7 +106,8 @@ export interface TeamSheetState {
   hasFrenesieAgressionPrayer: boolean;
   currentTurn: number; // 0..8 dans la mi-temps active
   turnMarkers: TeamTurnMarkers;
-  rerolls: number; // Stock de relances restantes (0..16)
+  rerolls: number; // Stock total de relances tactiques (0..16)
+  usedRerolls: boolean[]; // État coché (utilisée) / décoché (disponible) de chaque relance
 }
 
 export interface TurnAnnotation {

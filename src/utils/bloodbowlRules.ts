@@ -11,7 +11,9 @@ import {
   PrayerEntry,
   SpecialRuleTag,
   TeamSheetState,
+  TeamSide,
   TeamTurnMarkers,
+  TurnAnnotation,
   WeatherEntry,
 } from '../types/bloodbowl';
 
@@ -453,6 +455,53 @@ export function stepTeamRerolls(currentRerolls: number, delta: -1 | 1): number {
   return clampRerolls(clampRerolls(currentRerolls) + delta);
 }
 
+export function normalizeUsedRerolls(
+  usedRerolls: unknown,
+  totalRerolls: number
+): boolean[] {
+  const count = clampRerolls(totalRerolls);
+  const source = Array.isArray(usedRerolls) ? usedRerolls : [];
+  return Array.from({ length: count }, (_, idx) => Boolean(source[idx]));
+}
+
+export function setUsedReroll(
+  usedRerolls: boolean[],
+  index: number,
+  used: boolean,
+  totalRerolls: number
+): boolean[] {
+  const next = normalizeUsedRerolls(usedRerolls, totalRerolls);
+  if (index < 0 || index >= next.length) return next;
+  next[index] = Boolean(used);
+  return next;
+}
+
+export function toggleUsedReroll(
+  usedRerolls: boolean[],
+  index: number,
+  totalRerolls: number
+): boolean[] {
+  const next = normalizeUsedRerolls(usedRerolls, totalRerolls);
+  if (index < 0 || index >= next.length) return next;
+  next[index] = !next[index];
+  return next;
+}
+
+export function getUsedRerollsCount(
+  totalRerolls: number,
+  usedRerolls: boolean[]
+): number {
+  return normalizeUsedRerolls(usedRerolls, totalRerolls).filter(Boolean).length;
+}
+
+export function getRemainingRerolls(
+  totalRerolls: number,
+  usedRerolls: boolean[]
+): number {
+  const total = clampRerolls(totalRerolls);
+  return Math.max(0, total - getUsedRerollsCount(total, usedRerolls));
+}
+
 export function normalizeMatchState(
   raw: Partial<MatchSheetState> | null | undefined
 ): MatchSheetState {
@@ -464,6 +513,7 @@ export function normalizeMatchState(
   ): TeamSheetState => {
     const empty = createEmptyTeamState();
     if (!rawTeam || typeof rawTeam !== 'object') return empty;
+    const normalizedRerolls = clampRerolls(rawTeam.rerolls ?? empty.rerolls);
     return {
       ...empty,
       ...rawTeam,
@@ -472,15 +522,21 @@ export function normalizeMatchState(
         ...createEmptyTurnMarkers(),
         ...(rawTeam.turnMarkers ?? {}),
       },
-      rerolls: clampRerolls(rawTeam.rerolls ?? empty.rerolls),
-      players:
-        Array.isArray(rawTeam.players) && rawTeam.players.length === 16
-          ? rawTeam.players
-          : empty.players,
-      inducements:
-        Array.isArray(rawTeam.inducements) && rawTeam.inducements.length === 5
-          ? rawTeam.inducements
-          : empty.inducements,
+      rerolls: normalizedRerolls,
+      usedRerolls: normalizeUsedRerolls(rawTeam.usedRerolls, normalizedRerolls),
+      players: Array.isArray(rawTeam.players)
+        ? empty.players.map((defaultRow, idx) => ({
+            ...defaultRow,
+            ...(rawTeam.players?.[idx] ?? {}),
+            number: idx + 1,
+          }))
+        : empty.players,
+      inducements: Array.isArray(rawTeam.inducements)
+        ? empty.inducements.map((defaultLine, idx) => ({
+            ...defaultLine,
+            ...(rawTeam.inducements?.[idx] ?? {}),
+          }))
+        : empty.inducements,
     };
   };
 
@@ -494,13 +550,84 @@ export function normalizeMatchState(
         : null,
     teamA: normalizeTeam(raw.teamA),
     teamB: normalizeTeam(raw.teamB),
-    turns:
-      Array.isArray(raw.turns) && raw.turns.length === 16
-        ? raw.turns
-        : base.turns,
+    turns: Array.isArray(raw.turns)
+      ? base.turns.map((defaultTurn, idx) => ({
+          ...defaultTurn,
+          ...(raw.turns?.[idx] ?? {}),
+          turn: idx + 1,
+        }))
+      : base.turns,
     kickoffEventsLog: Array.isArray(raw.kickoffEventsLog)
       ? raw.kickoffEventsLog
       : [],
+  };
+}
+
+export type MatchBackupParseResult =
+  | { ok: true; match: MatchSheetState }
+  | { ok: false; error: string };
+
+export function parseMatchBackupJson(jsonText: string): MatchBackupParseResult {
+  const trimmed = jsonText.replace(/^\uFEFF/, '').trim();
+  if (!trimmed) {
+    return {
+      ok: false,
+      error: 'Le fichier sélectionné est vide.',
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return {
+      ok: false,
+      error: 'Format JSON invalide : impossible de lire la sauvegarde.',
+    };
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      error:
+        'Cette sauvegarde ne correspond pas à une feuille de match Blood Bowl.',
+    };
+  }
+
+  const candidate =
+    'match' in parsed &&
+    parsed.match &&
+    typeof parsed.match === 'object' &&
+    !Array.isArray(parsed.match)
+      ? (parsed.match as Record<string, unknown>)
+      : (parsed as Record<string, unknown>);
+
+  const hasTeamA =
+    'teamA' in candidate &&
+    candidate.teamA !== null &&
+    typeof candidate.teamA === 'object' &&
+    !Array.isArray(candidate.teamA);
+  const hasTeamB =
+    'teamB' in candidate &&
+    candidate.teamB !== null &&
+    typeof candidate.teamB === 'object' &&
+    !Array.isArray(candidate.teamB);
+
+  if (!hasTeamA || !hasTeamB) {
+    return {
+      ok: false,
+      error:
+        'Sauvegarde non reconnue : les données d’Équipe A et d’Équipe B sont manquantes.',
+    };
+  }
+
+  const normalized = normalizeMatchState(candidate as Partial<MatchSheetState>);
+  return {
+    ok: true,
+    match: {
+      ...normalized,
+      updatedAt: new Date().toISOString(),
+    },
   };
 }
 
@@ -540,6 +667,7 @@ export function createEmptyTeamState(): TeamSheetState {
     currentTurn: 0,
     turnMarkers: createEmptyTurnMarkers(),
     rerolls: 3,
+    usedRerolls: [false, false, false],
   };
 }
 
@@ -654,12 +782,14 @@ export function createDemoMatchState(): MatchSheetState {
     currentTurn: 8,
     turnMarkers: createEmptyTurnMarkers(),
     rerolls: 2,
+    usedRerolls: [true, false],
   };
 
   base.half = 2;
   base.activeTurnSide = 'A';
   base.teamA.currentTurn = 8;
   base.teamA.rerolls = 3;
+  base.teamA.usedRerolls = [true, false, false];
   base.turns[0] = { turn: 1, teamA: 'Réception propre, cage au centre', teamB: 'Blitz sur aile gauche' };
   base.turns[2] = { turn: 3, teamA: 'Passe de Konrad -> TD de Lukas !', teamB: 'Varag élimine Otto (-1 AR)' };
   base.turns[7] = { turn: 8, teamA: 'Défense solide', teamB: 'Varag égalise sur le fil (1-1)' };
@@ -667,3 +797,288 @@ export function createDemoMatchState(): MatchSheetState {
 
   return base;
 }
+
+export interface ActivePlayerSummary {
+  number: number;
+  name: string;
+  position: string;
+  reu: number;
+  eli: number;
+  int: number;
+  td: number;
+  mvp: boolean;
+  agro: number;
+  bp: number;
+  rpm: boolean;
+  retireTemp: boolean;
+  sequelles: string;
+  psp: number;
+}
+
+export interface TeamPlayerTotals {
+  reu: number;
+  eli: number;
+  int: number;
+  td: number;
+  agro: number;
+  mvp: number;
+  bp: number;
+  psp: number;
+}
+
+export interface TeamMatchSummaryData {
+  side: TeamSide;
+  name: string;
+  factionName: string | null;
+  coach: string;
+  specialRules: SpecialRuleTag[];
+  score: number;
+  tve: number;
+  vea: number;
+  journaliersCost: number;
+  adjustedTv: number;
+  petiteCaisse: number;
+  treasuryAdded: number;
+  inducementBudgetTotal: number;
+  inducementItems: Array<{ name: string; cost: number }>;
+  inducementsSpent: number;
+  dedicatedFansBefore: number;
+  fanRollD3: number | null;
+  popularityFactor: number;
+  kickoffChoice: 'kick' | 'receive' | null;
+  prayers: string[];
+  activePlayers: ActivePlayerSummary[];
+  totals: TeamPlayerTotals;
+  injuredPlayers: ActivePlayerSummary[];
+  pspEligiblePlayers: ActivePlayerSummary[];
+  gains: GainsBreakdown;
+  fdPostMatchRoll: number | null;
+  fdChange: -1 | 0 | 1;
+  dedicatedFansAfter: number;
+  treasuryBefore: number;
+  postMatchPurchasesCost: number;
+  treasuryBeforeMistakes: number;
+  expensiveMistake: ExpensiveMistakeOutcome;
+  finalTreasury: number;
+  pspSpentNotes: string[];
+  rosterMovesNotes: string[];
+  rerolls: number;
+  usedRerollsCount: number;
+  remainingRerolls: number;
+  currentTurn: number;
+  conceded: boolean;
+  concededWithoutPenalty: boolean;
+}
+
+export interface MatchSummaryData {
+  date: string;
+  location: string;
+  stadium: string;
+  stadiumAttribute: string;
+  weatherRoll: number | null;
+  weatherName: string;
+  half: 1 | 2;
+  activeTurnSide: TeamSide | null;
+  outcomeLabel: string;
+  teamA: TeamMatchSummaryData;
+  teamB: TeamMatchSummaryData;
+  highlightedTurns: TurnAnnotation[];
+  kickoffEventsLog: MatchSheetState['kickoffEventsLog'];
+}
+
+function isPlayerRowActive(player: PlayerMatchRow): boolean {
+  return (
+    player.name.trim() !== '' ||
+    (player.position ?? '').trim() !== '' ||
+    player.reu > 0 ||
+    player.eli > 0 ||
+    player.int > 0 ||
+    player.td > 0 ||
+    player.mvp ||
+    player.agro > 0 ||
+    player.bp > 0 ||
+    player.rpm ||
+    player.retireTemp ||
+    player.sequelles.trim() !== ''
+  );
+}
+
+export function buildMatchSummaryData(match: MatchSheetState): MatchSummaryData {
+  const scoreA = calculateTeamScore(match.teamA);
+  const scoreB = calculateTeamScore(match.teamB);
+  const fpA = calculatePopularityFactor(match.teamA);
+  const fpB = calculatePopularityFactor(match.teamB);
+  const budgets = calculateInducementBudgets(match.teamA, match.teamB);
+
+  const buildTeamSummary = (
+    side: TeamSide,
+    team: TeamSheetState,
+    opponent: TeamSheetState,
+    teamScore: number,
+    oppScore: number,
+    teamFP: number,
+    oppFP: number
+  ): TeamMatchSummaryData => {
+    const def = getTeamDef(team.teamId);
+    const specialRules = getTeamSpecialRules(team);
+    const activePlayers: ActivePlayerSummary[] = team.players
+      .filter(isPlayerRowActive)
+      .map((p) => ({
+        number: p.number,
+        name: p.name.trim() || `Joueur #${p.number}`,
+        position: (p.position ?? '').trim(),
+        reu: Math.max(0, p.reu),
+        eli: Math.max(0, p.eli),
+        int: Math.max(0, p.int),
+        td: Math.max(0, p.td),
+        mvp: Boolean(p.mvp),
+        agro: Math.max(0, p.agro),
+        bp: Math.max(0, p.bp),
+        rpm: Boolean(p.rpm),
+        retireTemp: Boolean(p.retireTemp),
+        sequelles: p.sequelles.trim(),
+        psp: calculatePlayerPsp(p, team),
+      }));
+
+    const totals = activePlayers.reduce<TeamPlayerTotals>(
+      (acc, p) => ({
+        reu: acc.reu + p.reu,
+        eli: acc.eli + p.eli,
+        int: acc.int + p.int,
+        td: acc.td + p.td,
+        agro: acc.agro + p.agro,
+        mvp: acc.mvp + (p.mvp ? 1 : 0),
+        bp: acc.bp + p.bp,
+        psp: acc.psp + p.psp,
+      }),
+      { reu: 0, eli: 0, int: 0, td: 0, agro: 0, mvp: 0, bp: 0, psp: 0 }
+    );
+
+    const injuredPlayers = activePlayers.filter(
+      (p) => p.rpm || p.retireTemp || p.bp > 0 || p.sequelles !== ''
+    );
+    const pspEligiblePlayers = activePlayers.filter((p) => p.psp >= 3);
+
+    const gains = calculatePostMatchGains(
+      team,
+      opponent,
+      teamScore,
+      teamFP,
+      oppFP
+    );
+
+    const outcome = getMatchOutcome(
+      side === 'A' ? teamScore : oppScore,
+      side === 'A' ? oppScore : teamScore,
+      side
+    );
+    const autoFd = evaluateDedicatedFansChange(
+      team.dedicatedFans,
+      team.fdPostMatchRoll,
+      outcome,
+      team.conceded && !team.concededWithoutPenalty
+    );
+    const fdChange = team.fdManualChange ?? autoFd.change;
+    const dedicatedFansAfter = Math.max(
+      1,
+      Math.min(7, team.dedicatedFans + fdChange)
+    );
+
+    const treasuryAdded =
+      side === 'A' ? budgets.treasuryAddedA : budgets.treasuryAddedB;
+    const petiteCaisse =
+      side === 'A' ? budgets.petiteCaisseA : budgets.petiteCaisseB;
+    const inducementBudgetTotal =
+      side === 'A' ? budgets.totalBudgetA : budgets.totalBudgetB;
+    const inducementsSpent =
+      side === 'A' ? budgets.spentA : budgets.spentB;
+
+    const treasuryBeforeMistakes = Math.max(
+      0,
+      team.treasury -
+        treasuryAdded +
+        gains.totalGains -
+        Math.max(0, team.postMatchPurchasesCost)
+    );
+    const expensiveMistake = evaluateExpensiveMistakes(
+      treasuryBeforeMistakes,
+      team.expensiveMistakeRoll,
+      team.expensiveMistakeSubRoll
+    );
+
+    return {
+      side,
+      name: team.name.trim() || (side === 'A' ? 'Équipe A' : 'Équipe B'),
+      factionName: def ? def.name : null,
+      coach: team.coach.trim(),
+      specialRules,
+      score: teamScore,
+      tve: Math.max(0, team.tve),
+      vea: Math.max(0, team.vea),
+      journaliersCost: Math.max(0, team.journaliersCost),
+      adjustedTv: calculateAdjustedTV(team),
+      petiteCaisse,
+      treasuryAdded,
+      inducementBudgetTotal,
+      inducementItems: team.inducements
+        .map((item) => ({ name: item.name.trim(), cost: Math.max(0, item.cost || 0) }))
+        .filter((item) => item.name !== '' || item.cost > 0),
+      inducementsSpent,
+      dedicatedFansBefore: Math.max(1, team.dedicatedFans),
+      fanRollD3: team.fanRollD3,
+      popularityFactor: teamFP,
+      kickoffChoice: team.kickoffChoice,
+      prayers: team.prayers.map((p) => p.trim()).filter(Boolean),
+      activePlayers,
+      totals,
+      injuredPlayers,
+      pspEligiblePlayers,
+      gains,
+      fdPostMatchRoll: team.fdPostMatchRoll,
+      fdChange,
+      dedicatedFansAfter,
+      treasuryBefore: Math.max(0, team.treasury),
+      postMatchPurchasesCost: Math.max(0, team.postMatchPurchasesCost),
+      treasuryBeforeMistakes,
+      expensiveMistake,
+      finalTreasury: expensiveMistake.finalTreasury,
+      pspSpentNotes: team.pspSpentNotes.map((s) => s.trim()).filter(Boolean),
+      rosterMovesNotes: team.rosterMovesNotes.map((s) => s.trim()).filter(Boolean),
+      rerolls: clampRerolls(team.rerolls),
+      usedRerollsCount: getUsedRerollsCount(team.rerolls, team.usedRerolls),
+      remainingRerolls: getRemainingRerolls(team.rerolls, team.usedRerolls),
+      currentTurn: clampTurnMarker(team.currentTurn),
+      conceded: team.conceded,
+      concededWithoutPenalty: team.concededWithoutPenalty,
+    };
+  };
+
+  const teamA = buildTeamSummary('A', match.teamA, match.teamB, scoreA, scoreB, fpA, fpB);
+  const teamB = buildTeamSummary('B', match.teamB, match.teamA, scoreB, scoreA, fpB, fpA);
+
+  let outcomeLabel = 'Match Nul';
+  if (scoreA > scoreB) {
+    outcomeLabel = `Victoire ${teamA.name}`;
+  } else if (scoreB > scoreA) {
+    outcomeLabel = `Victoire ${teamB.name}`;
+  }
+
+  return {
+    date: match.date,
+    location: match.location.trim(),
+    stadium: match.stadium.trim(),
+    stadiumAttribute: match.stadiumAttribute.trim(),
+    weatherRoll: match.weatherRoll,
+    weatherName: match.weatherName.trim(),
+    half: match.half,
+    activeTurnSide: match.activeTurnSide,
+    outcomeLabel,
+    teamA,
+    teamB,
+    highlightedTurns: match.turns.filter(
+      (t) => t.teamA.trim() !== '' || t.teamB.trim() !== ''
+    ),
+    kickoffEventsLog: match.kickoffEventsLog,
+  };
+}
+

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildMatchSummaryData,
   calculateAdjustedTV,
   calculateInducementBudgets,
   calculatePlayerPsp,
@@ -8,17 +9,25 @@ import {
   calculatePostMatchGains,
   clampRerolls,
   clampTurnMarker,
+  createDemoMatchState,
   createEmptyPlayers,
   createEmptyTeamState,
+  createInitialMatchState,
   evaluateDedicatedFansChange,
   evaluateExpensiveMistakes,
   getGlobalTurnNumber,
   getPlayerTdSum,
+  getRemainingRerolls,
+  getUsedRerollsCount,
   getWeatherByRoll,
   normalizeMatchState,
+  normalizeUsedRerolls,
+  parseMatchBackupJson,
+  setUsedReroll,
   stepTeamRerolls,
   stepTeamScore,
   stepTeamTurn,
+  toggleUsedReroll,
 } from './bloodbowlRules';
 
 test('Season 3 inducement budget matches rulebook Jay vs Dan example', () => {
@@ -209,3 +218,131 @@ test('Reroll helpers clamp 0..16, step stock cleanly, and upgrade legacy matches
   assert.equal(upgraded.teamA.rerolls, 3);
   assert.equal(upgraded.teamB.rerolls, 3);
 });
+
+test('parseMatchBackupJson restores exported match JSON, upgrades partial saves, and rejects invalid files', () => {
+  const demo = createDemoMatchState();
+  const serialized = JSON.stringify(demo);
+  const res = parseMatchBackupJson(serialized);
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.equal(res.match.teamA.name, 'Reikland Reavers');
+    assert.equal(res.match.teamB.name, 'Orcland Raiders');
+    assert.equal(res.match.teamA.rerolls, 3);
+    assert.equal(res.match.teamB.rerolls, 2);
+    assert.equal(res.match.teamA.players[0].name, 'Griff Oberwald Jr');
+  }
+
+  // Partial legacy save with truncated players array still normalizes to 16 slots
+  const partial = parseMatchBackupJson(
+    JSON.stringify({
+      teamA: { name: 'Altdorf Stars', players: [{ name: 'Karl', td: 2 }] },
+      teamB: { name: 'Middenheim Marauders' },
+    })
+  );
+  assert.equal(partial.ok, true);
+  if (partial.ok) {
+    assert.equal(partial.match.teamA.players.length, 16);
+    assert.equal(partial.match.teamA.players[0].name, 'Karl');
+    assert.equal(partial.match.teamA.players[0].td, 2);
+    assert.equal(partial.match.teamA.rerolls, 3);
+  }
+
+  // Invalid inputs rejected cleanly
+  assert.equal(parseMatchBackupJson('').ok, false);
+  assert.equal(parseMatchBackupJson('{invalid json').ok, false);
+  assert.equal(parseMatchBackupJson('[1,2,3]').ok, false);
+  assert.equal(parseMatchBackupJson('{"foo":"bar"}').ok, false);
+});
+
+test('buildMatchSummaryData aggregates active players, inducements, turn notes, and post-match finances accurately', () => {
+  const demo = createDemoMatchState();
+  const summary = buildMatchSummaryData(demo);
+
+  assert.equal(summary.outcomeLabel, 'Victoire Reikland Reavers');
+  assert.equal(summary.teamA.score, 2);
+  assert.equal(summary.teamB.score, 1);
+
+  // Active players exclude empty 7..16 slots
+  assert.equal(summary.teamA.activePlayers.length, 6);
+  assert.equal(summary.teamB.activePlayers.length, 5);
+
+  // Totals & PSP: Orques have Bagarreurs Brutaux (ELI=3, TD=2)
+  assert.equal(summary.teamA.totals.td, 2);
+  assert.equal(summary.teamB.totals.td, 1);
+  // Varag Kogn'Dur: 2 ELI * 3 + 1 TD * 2 = 8 PSP
+  assert.equal(summary.teamB.activePlayers[0].psp, 8);
+  assert.equal(summary.teamA.injuredPlayers.length, 1);
+  assert.equal(summary.teamB.injuredPlayers.length, 1);
+
+  // Inducements filter out empty slots
+  assert.equal(summary.teamA.inducementItems.length, 1);
+  assert.equal(summary.teamB.inducementItems.length, 3);
+  assert.equal(summary.teamB.inducementsSpent, 140000);
+
+  // Turn annotations filter out empty turns
+  assert.equal(summary.highlightedTurns.length, 4);
+  assert.equal(summary.highlightedTurns[0].turn, 1);
+  assert.equal(summary.highlightedTurns[3].turn, 12);
+
+  // Post-match FD & treasury
+  assert.equal(summary.teamA.fdChange, 1);
+  assert.equal(summary.teamA.dedicatedFansAfter, 5);
+  assert.equal(summary.teamB.fdChange, -1);
+  assert.equal(summary.teamB.dedicatedFansAfter, 2);
+
+  // Empty match yields clean zeroed summary with no active players or turn notes
+  const emptySummary = buildMatchSummaryData(createInitialMatchState());
+  assert.equal(emptySummary.outcomeLabel, 'Match Nul');
+  assert.equal(emptySummary.teamA.activePlayers.length, 0);
+  assert.equal(emptySummary.highlightedTurns.length, 0);
+  assert.equal(emptySummary.teamA.rerolls, 3);
+  assert.equal(emptySummary.teamA.remainingRerolls, 3);
+  assert.equal(emptySummary.teamA.usedRerollsCount, 0);
+});
+
+test('Tactical reroll checkbox helpers normalize, toggle, count remaining, and upgrade legacy saves', () => {
+  assert.deepEqual(normalizeUsedRerolls(undefined, 3), [false, false, false]);
+  assert.deepEqual(normalizeUsedRerolls([true, false, true, true], 2), [true, false]);
+
+  let slots = normalizeUsedRerolls([], 3);
+  slots = setUsedReroll(slots, 0, true, 3);
+  slots = toggleUsedReroll(slots, 2, 3);
+  assert.deepEqual(slots, [true, false, true]);
+  assert.equal(getUsedRerollsCount(3, slots), 2);
+  assert.equal(getRemainingRerolls(3, slots), 1);
+
+  // Unchecking restores availability
+  slots = setUsedReroll(slots, 0, false, 3);
+  assert.deepEqual(slots, [false, false, true]);
+  assert.equal(getRemainingRerolls(3, slots), 2);
+
+  // Increasing stock appends unchecked slots; decreasing trims cleanly
+  const expanded = normalizeUsedRerolls(slots, 5);
+  assert.deepEqual(expanded, [false, false, true, false, false]);
+  assert.equal(getRemainingRerolls(5, expanded), 4);
+
+  const shrunk = normalizeUsedRerolls(expanded, 2);
+  assert.deepEqual(shrunk, [false, false]);
+  assert.equal(getUsedRerollsCount(2, shrunk), 0);
+
+  // Legacy saved team missing usedRerolls upgrades cleanly
+  const legacy = createEmptyTeamState();
+  const { usedRerolls: _ur, ...withoutUsedRerolls } = legacy;
+  const upgraded = normalizeMatchState({
+    teamA: { ...withoutUsedRerolls, rerolls: 4 } as never,
+    teamB: { ...withoutUsedRerolls, rerolls: 1 } as never,
+  });
+  assert.deepEqual(upgraded.teamA.usedRerolls, [false, false, false, false]);
+  assert.deepEqual(upgraded.teamB.usedRerolls, [false]);
+
+  // Demo summary reflects tactical reroll counts
+  const demoSummary = buildMatchSummaryData(createDemoMatchState());
+  assert.equal(demoSummary.teamA.rerolls, 3);
+  assert.equal(demoSummary.teamA.usedRerollsCount, 1);
+  assert.equal(demoSummary.teamA.remainingRerolls, 2);
+  assert.equal(demoSummary.teamB.rerolls, 2);
+  assert.equal(demoSummary.teamB.usedRerollsCount, 1);
+  assert.equal(demoSummary.teamB.remainingRerolls, 1);
+});
+
+

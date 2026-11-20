@@ -6,6 +6,7 @@ import {
   formatGold,
   getGlobalTurnNumber,
   getTeamDef,
+  normalizeUsedRerolls,
   stepTeamRerolls,
   stepTeamTurn,
 } from '../utils/bloodbowlRules';
@@ -93,10 +94,14 @@ export const TurnCounter: React.FC<TurnCounterProps> = ({
   };
 
   const handleStepRerolls = (side: TeamSide, delta: -1 | 1) => {
-    updateTeamTurn(side, (team) => ({
-      ...team,
-      rerolls: stepTeamRerolls(team.rerolls, delta),
-    }));
+    updateTeamTurn(side, (team) => {
+      const nextRerolls = stepTeamRerolls(team.rerolls, delta);
+      return {
+        ...team,
+        rerolls: nextRerolls,
+        usedRerolls: normalizeUsedRerolls(team.usedRerolls, nextRerolls),
+      };
+    });
   };
 
   const handleSwitchHalf = (targetHalf: 1 | 2) => {
